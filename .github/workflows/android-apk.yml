@@ -12,10 +12,11 @@ permissions:
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v5
 
       - name: Set up JDK 17
@@ -24,26 +25,50 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configure Android SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          which sdkmanager
-          sdkmanager --version
+      - name: Install Android SDK command-line tools
+        uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages
+      - name: Install SDK packages
         run: |
-          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses
-          sdkmanager --sdk_root="$ANDROID_HOME" \
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found in $ANDROID_HOME/cmdline-tools"
+            exit 1
+          fi
+          echo "Using sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
+            "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
+
+      - name: Verify Android SDK
+        run: |
+          test -d "$ANDROID_HOME/platforms/android-35"
+          test -d "$ANDROID_HOME/build-tools/35.0.0"
+          echo "Android SDK installation verified."
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build APK
-        run: gradle assembleDebug
+      - name: Verify project files
+        run: |
+          test -f settings.gradle.kts
+          test -f app/build.gradle.kts
+          test -f app/src/main/AndroidManifest.xml
+          echo "Project files verified."
+
+      - name: Build debug APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Verify APK
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK"
+          ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -51,4 +76,5 @@ jobs:
           name: AyushMusic-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 7
 
